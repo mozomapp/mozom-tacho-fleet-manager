@@ -15,7 +15,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "@mozomdev/tacho": "file:../tacho/mozomdev-tacho-0.6.0.tgz",
+    "@mozomdev/tacho": "file:../tacho/mozomdev-tacho-0.6.1.tgz",
     "better-sqlite3": "^12.2.0"
   },
   "devDependencies": {

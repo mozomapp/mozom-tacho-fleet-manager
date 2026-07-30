@@ -6,16 +6,36 @@ import {
   findInfringements,
   availabilityState
 } from '@mozomdev/tacho'
-import type { DddCardDay, DddCardHolder, DddSegment } from '@mozomdev/tacho'
-import type { AnalyzeResult, DaySummary, WeekTotal } from '../shared/types'
+import type { DddCardDay, DddCardHolder, DddPlaceRecord, DddSegment } from '@mozomdev/tacho'
+import type { AnalyzeResult, DaySummary, PlaceStamp, WeekTotal } from '../shared/types'
 import { listFiles } from './db'
 
 const MINUTE_MS = 60_000
 const DAY_MS = 1440 * MINUTE_MS
 
-function daySummaries(segments: DddSegment[], days: DddCardDay[]): DaySummary[] {
+function placeStamp(p: DddPlaceRecord): PlaceStamp {
+  return {
+    label: p.regionName ? `${p.countryCode} · ${p.regionName}` : p.countryCode,
+    time: p.time,
+    odometerKm: p.odometerKm
+  }
+}
+
+function daySummaries(segments: DddSegment[], days: DddCardDay[], places: DddPlaceRecord[]): DaySummary[] {
   const distByDate = new Map<string, number>()
   for (const d of days) distByDate.set(d.date.slice(0, 10), d.distanceKm)
+
+  // First begin / last end declaration per calendar day (places arrive sorted).
+  const startByDate = new Map<string, PlaceStamp>()
+  const endByDate = new Map<string, PlaceStamp>()
+  for (const p of places) {
+    const date = p.time.slice(0, 10)
+    if (p.type === 'begin') {
+      if (!startByDate.has(date)) startByDate.set(date, placeStamp(p))
+    } else {
+      endByDate.set(date, placeStamp(p))
+    }
+  }
 
   const byDate = new Map<string, DaySummary>()
   for (const s of segments) {
@@ -31,7 +51,9 @@ function daySummaries(segments: DddSegment[], days: DddCardDay[]): DaySummary[] 
         workMin: 0,
         availabilityMin: 0,
         restMin: 0,
-        distanceKm: distByDate.get(date) ?? 0
+        distanceKm: distByDate.get(date) ?? 0,
+        startPlace: startByDate.get(date) ?? null,
+        endPlace: endByDate.get(date) ?? null
       }
       const mins = Math.round((chunkEnd - start) / MINUTE_MS)
       if (s.activity === 'driving') row.drivingMin += mins
@@ -68,12 +90,14 @@ export function analyzeDriver(subjectId: number): AnalyzeResult {
   let holder: DddCardHolder | null = null
   let generation: 1 | 2 = 1
   const allDays: DddCardDay[] = []
+  const placeMap = new Map<string, DddPlaceRecord>()
   for (const f of files) {
     try {
       const card = parseDriverCardFile(new Uint8Array(fs.readFileSync(f.vaultPath)))
       holder = card.holder ?? holder
       if (card.generation === 2) generation = 2
       allDays.push(...card.days)
+      for (const p of card.places) placeMap.set(`${p.time}|${p.type}`, p)
     } catch (err) {
       return { ok: false, error: `Failed to parse ${f.originalName}: ${err instanceof Error ? err.message : String(err)}` }
     }
@@ -83,7 +107,8 @@ export function analyzeDriver(subjectId: number): AnalyzeResult {
   if (segments.length === 0) return { ok: false, error: 'Card files contain no activity data.' }
   const entries = segmentsToTachoEntries(segments, { companyId: 'local', driverUserId: String(subjectId) })
   const now = new Date()
-  const summaries = daySummaries(segments, allDays)
+  const places = [...placeMap.values()].sort((a, b) => Date.parse(a.time) - Date.parse(b.time))
+  const summaries = daySummaries(segments, allDays, places)
 
   const dates = [...new Set(allDays.map((d) => d.date.slice(0, 10)))].sort()
   return {

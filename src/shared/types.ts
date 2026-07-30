@@ -65,6 +65,13 @@ export interface ScanResult {
 
 import type { DddCardHolder, Infringement, TachoAvailabilityState } from '@mozomdev/tacho'
 
+export interface PlaceStamp {
+  /** e.g. "E · Comunidad Valenciana" or "UK". */
+  label: string
+  time: string
+  odometerKm: number
+}
+
 export interface DaySummary {
   /** YYYY-MM-DD (UTC). */
   date: string
@@ -73,6 +80,10 @@ export interface DaySummary {
   availabilityMin: number
   restMin: number
   distanceKm: number
+  /** First daily-work-period begin declaration of the day. */
+  startPlace: PlaceStamp | null
+  /** Last daily-work-period end declaration of the day. */
+  endPlace: PlaceStamp | null
 }
 
 export interface WeekTotal {

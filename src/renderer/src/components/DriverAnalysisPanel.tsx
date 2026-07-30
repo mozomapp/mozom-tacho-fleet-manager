@@ -140,9 +140,10 @@ export default function DriverAnalysisPanel({ analysis, driverLabel, onClose }: 
               <thead className="sticky top-0 bg-slate-900 uppercase text-slate-500">
                 <tr>
                   <th className="px-2 py-1.5">Date</th>
+                  <th className="px-2 py-1.5">Start</th>
+                  <th className="px-2 py-1.5">End</th>
                   <th className="px-2 py-1.5">Driving</th>
                   <th className="px-2 py-1.5">Work</th>
-                  <th className="px-2 py-1.5">Avail.</th>
                   <th className="px-2 py-1.5">Rest</th>
                   <th className="px-2 py-1.5 text-right">km</th>
                 </tr>
@@ -151,9 +152,20 @@ export default function DriverAnalysisPanel({ analysis, driverLabel, onClose }: 
                 {recentDays.map((d) => (
                   <tr key={d.date} className={d.drivingMin > 0 ? '' : 'text-slate-500'}>
                     <td className="px-2 py-1.5">{fmtDate(d.date)}</td>
+                    <td
+                      className="max-w-28 truncate px-2 py-1.5"
+                      title={d.startPlace ? `${d.startPlace.label} @ ${fmtDateTime(d.startPlace.time)} · odo ${d.startPlace.odometerKm} km` : undefined}
+                    >
+                      {d.startPlace?.label ?? '—'}
+                    </td>
+                    <td
+                      className="max-w-28 truncate px-2 py-1.5"
+                      title={d.endPlace ? `${d.endPlace.label} @ ${fmtDateTime(d.endPlace.time)} · odo ${d.endPlace.odometerKm} km` : undefined}
+                    >
+                      {d.endPlace?.label ?? '—'}
+                    </td>
                     <td className="px-2 py-1.5">{d.drivingMin ? fmtMin(d.drivingMin) : '—'}</td>
                     <td className="px-2 py-1.5">{d.workMin ? fmtMin(d.workMin) : '—'}</td>
-                    <td className="px-2 py-1.5">{d.availabilityMin ? fmtMin(d.availabilityMin) : '—'}</td>
                     <td className="px-2 py-1.5">{d.restMin ? fmtMin(d.restMin) : '—'}</td>
                     <td className="px-2 py-1.5 text-right">{d.distanceKm || '—'}</td>
                   </tr>
