@@ -105,8 +105,18 @@ export function analyzeDriver(subjectId: number): AnalyzeResult {
 
   const segments = daysToSegments(allDays)
   if (segments.length === 0) return { ok: false, error: 'Card files contain no activity data.' }
+
+  // The card is authoritative up to its newest download: time after the last recorded
+  // change with no record means the card was out of any tachograph, i.e. rest — the same
+  // rule daysToSegments applies between recorded days. Beyond the download we know nothing,
+  // so the analysis is evaluated "as of" that moment, not the wall clock.
+  const asOf = files.map((f) => f.downloadedAt).sort().at(-1) as string
+  const last = segments[segments.length - 1] as DddSegment
+  if (Date.parse(last.endedAt) < Date.parse(asOf)) {
+    segments.push({ activity: 'rest', startedAt: last.endedAt, endedAt: asOf, cardInserted: false })
+  }
   const entries = segmentsToTachoEntries(segments, { companyId: 'local', driverUserId: String(subjectId) })
-  const now = new Date()
+  const now = new Date(asOf)
   const places = [...placeMap.values()].sort((a, b) => Date.parse(a.time) - Date.parse(b.time))
   const summaries = daySummaries(segments, allDays, places)
 
@@ -120,6 +130,7 @@ export function analyzeDriver(subjectId: number): AnalyzeResult {
       daysRecorded: dates.length,
       firstDay: dates[0] ?? null,
       lastDay: dates[dates.length - 1] ?? null,
+      asOf,
       availability: availabilityState(entries, now),
       infringements: findInfringements(entries, now),
       recentDays: summaries.slice(0, 28),

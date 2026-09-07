@@ -99,6 +99,8 @@ export interface DriverAnalysis {
   daysRecorded: number
   firstDay: string | null
   lastDay: string | null
+  /** Newest card download among the files used; the timeline is trusted (and evaluated) up to here. */
+  asOf: string
   availability: TachoAvailabilityState
   infringements: Infringement[]
   /** Most recent days first. */

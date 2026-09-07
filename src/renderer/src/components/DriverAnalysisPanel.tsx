@@ -63,7 +63,7 @@ export default function DriverAnalysisPanel({ analysis, driverLabel, onClose }: 
       </div>
 
       <h3 className="mt-4 mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-        Availability now
+        Availability as of last download ({new Date(analysis.asOf).toLocaleString()})
       </h3>
       <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <Tile label="Drive left today" value={fmtMin(av.drivingRemainingTodayMin)} />
