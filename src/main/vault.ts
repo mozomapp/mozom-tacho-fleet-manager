@@ -3,7 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import type { ArchivedFile, FileKind, ImportResult } from '../shared/types'
 import { getFileBySha256, getSettings, insertFile } from './db'
-import { verifyCardFile } from './signatures'
+import { verifyCardFile, verifyVuFile } from './signatures'
 
 /**
  * Detect what a tachograph download file contains.
@@ -83,11 +83,9 @@ export function archiveBuffer(
 
 /** Verify what we can: driver-card files fully; VU files await the VU parser. */
 export function signatureOf(buf: Buffer, kind: FileKind): { status: ArchivedFile['signatureStatus']; report: string } {
-  if (kind !== 'driver_card') {
-    return { status: 'unverified', report: 'Vehicle-unit signature verification not implemented yet' }
-  }
+  if (kind === 'unknown') return { status: 'unverified', report: 'Unrecognised file format' }
   try {
-    const r = verifyCardFile(buf)
+    const r = kind === 'driver_card' ? verifyCardFile(buf) : verifyVuFile(buf)
     return { status: r.status, report: JSON.stringify(r) }
   } catch (err) {
     return { status: 'unverified', report: `Verification error: ${err instanceof Error ? err.message : String(err)}` }

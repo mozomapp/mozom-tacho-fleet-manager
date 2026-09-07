@@ -24,8 +24,12 @@ downloading and archiving** of digital tachograph records, reusing GloboFleet ha
   tracked per subject with OK / due-soon / overdue status.
 - Originals stored **bit-exact, read-only, append-only** in the vault (dedup by SHA-256),
   with an optional mirrored second copy (`mirror_path` setting). Retention: keep indefinitely.
-- Signature verification (Gen1 RSA / Gen2 ECC against ERCA keys): **not yet implemented** —
-  files are archived untouched and marked `unverified`. Phase 1b.
+- Signature verification on import: driver cards (Gen1 RSA chain ERCA → MSCA → card + PKCS#1
+  file signatures; Gen2 ECC certificate chain + ECDSA file signatures) and Gen2 vehicle units
+  (ERCA(G2) → MSCA → VU certificate, then every TREP block signature). ERCA root keys are the
+  JRC publications, embedded in `src/main/signatures.ts` (copies + fingerprints in
+  `resources/erca/`). Files show `valid` / `invalid` with a per-check report on hover. Gen1
+  vehicle-unit files (TREP 01–05, fixed layouts) are archived but not verified/parsed yet.
 
 ## Dev
 
@@ -58,6 +62,23 @@ Native modules (`better-sqlite3`, `@pokusew/pcsclite`) are built for Electron's 
 built on a Windows machine (or a prebuild step added) — cross-building from macOS won't
 produce a working reader on the office PC.
 
+## Vehicle-unit analysis
+
+Gen2 / Gen2 v2 VU files are parsed (`src/main/vuParser.ts`): identification, downloadable
+period, previous download, company locks, controls, calibration (next due), per-day odometer,
+driving minutes (incl. driving without a card and crew driving), card insertions, places,
+events/faults/over-speeding. The vehicle panel merges every VU file for a vehicle (newest wins
+per day) and cross-checks against the driver-card archive: known drivers whose card has no
+record for a VU-recorded driving day, and driver cards seen in the VU that aren't in the archive.
+
+## macOS app
+
+```bash
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac   # unsigned arm64 DMG in release/
+```
+
+Unsigned: on first launch right-click → Open (Gatekeeper). Uses the same vault/DB as `npm run dev`.
+
 ## Windows build
 
 ```bash
@@ -70,6 +91,6 @@ smartcard service (phase 2), tray/auto-start (later).
 ## Roadmap
 
 Workstream: devman `cross-tacho-download-archive`.
-Phase 1 import+vault+scheduler ✓ → 2 PC/SC card download (built, hardware validation
-pending) → 1b signature verification → 3 `.ddd` parsing / driver analysis ✓ (first cut)
-→ moztacho export.
+Phase 1 import+vault+scheduler ✓ → 2 PC/SC card download ✓ (verified on real reader) →
+1b signature verification ✓ → 3 card + VU parsing, driver/vehicle analysis ✓ (first cut) →
+moztacho export.

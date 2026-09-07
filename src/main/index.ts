@@ -12,8 +12,9 @@ import {
 import { detectKind, importFiles, isArchived, signatureOf } from './vault'
 import { findTachoFiles, scanForDownloadkey, tidyDownloadkey } from './importer'
 import { syncMirror } from './mirror'
+import { parseVuFile } from './vuParser'
 import { listSubjects } from './schedule'
-import { analyzeDriver } from './analysis'
+import { analyzeDriver, analyzeVehicle } from './analysis'
 import { readerMonitor, waitForCard } from './pcsc'
 import { downloadCardToVault } from './cardDownload'
 import type { CardDownloadOptions } from '../shared/types'
@@ -82,6 +83,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('vault:reveal', (_e, filePath: string) => shell.showItemInFolder(filePath))
   ipcMain.handle('analyze:driver', (_e, subjectId: number) => analyzeDriver(subjectId))
+  ipcMain.handle('analyze:vehicle', (_e, subjectId: number) => analyzeVehicle(subjectId))
 
   // Office card reader: live reader/card status pushed to every window.
   readerMonitor.start()
@@ -160,6 +162,12 @@ app.whenReady().then(() => {
     app.exit(0)
     return
   }
+  const vuIdx = process.argv.indexOf('--vu')
+  if (vuIdx !== -1) {
+    process.stdout.write(`${JSON.stringify(parseVuFile(fs.readFileSync(process.argv[vuIdx + 1] as string)))}\n`)
+    app.exit(0)
+    return
+  }
   const verifyIdx = process.argv.indexOf('--verify-file')
   if (verifyIdx !== -1) {
     const file = process.argv[verifyIdx + 1] as string
@@ -175,6 +183,13 @@ app.whenReady().then(() => {
   }
   if (process.argv.includes('--card-download')) {
     void runCliCardDownload(process.argv)
+    return
+  }
+  const vehIdx = process.argv.indexOf('--analyze-vehicle')
+  if (vehIdx !== -1) {
+    const result = analyzeVehicle(Number(process.argv[vehIdx + 1]))
+    process.stdout.write(`${JSON.stringify(result)}\n`)
+    app.exit(result.ok ? 0 : 1)
     return
   }
   const analyzeIdx = process.argv.indexOf('--analyze')

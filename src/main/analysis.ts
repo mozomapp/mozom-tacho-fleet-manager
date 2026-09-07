@@ -6,9 +6,11 @@ import {
   findInfringements,
   availabilityState
 } from '@mozomdev/tacho'
+import { parseVuFile } from './vuParser'
+import type { VehicleAnalysis, VehicleAnalyzeResult, VuAnalysis, VuDay, VuEvent } from '../shared/types'
 import type { DddCardDay, DddCardHolder, DddPlaceRecord, DddSegment } from '@mozomdev/tacho'
-import type { AnalyzeResult, DaySummary, PlaceStamp, WeekTotal } from '../shared/types'
-import { listFiles } from './db'
+import type { AnalyzeResult, ArchivedFile, DaySummary, PlaceStamp, WeekTotal } from '../shared/types'
+import { listFiles, listSubjectRows } from './db'
 
 const MINUTE_MS = 60_000
 const DAY_MS = 1440 * MINUTE_MS
@@ -137,4 +139,85 @@ export function analyzeDriver(subjectId: number): AnalyzeResult {
       weekTotals: weekTotals(summaries).slice(0, 6)
     }
   }
+}
+
+
+/** Card numbers + recorded dates per driver subject, from their newest card file. */
+function knownDrivers(): { subjectId: number; label: string; cardNumber: string; dates: Set<string> }[] {
+  const out: { subjectId: number; label: string; cardNumber: string; dates: Set<string> }[] = []
+  const bySubject = new Map<number, ArchivedFile[]>()
+  for (const f of listFiles()) {
+    if (f.kind !== 'driver_card' || f.subjectId === null) continue
+    bySubject.set(f.subjectId, [...(bySubject.get(f.subjectId) ?? []), f])
+  }
+  const labels = new Map(listSubjectRows().map((s) => [s.id, s.label]))
+  for (const [subjectId, files] of bySubject) {
+    const dates = new Set<string>()
+    let cardNumber = ''
+    for (const f of files) {
+      try {
+        const card = parseDriverCardFile(new Uint8Array(fs.readFileSync(f.vaultPath)))
+        cardNumber = card.holder?.cardNumber ?? cardNumber
+        for (const d of card.days) dates.add(d.date.slice(0, 10))
+      } catch {
+        // unreadable file: skip
+      }
+    }
+    if (cardNumber) out.push({ subjectId, label: labels.get(subjectId) ?? String(subjectId), cardNumber, dates })
+  }
+  return out
+}
+
+/** Merge every VU file assigned to a vehicle (newest wins per day) and cross-check against driver cards. */
+export function analyzeVehicle(subjectId: number): VehicleAnalyzeResult {
+  const files = listFiles()
+    .filter((f) => f.subjectId === subjectId && f.kind === 'vehicle_unit')
+    .sort((a, b) => a.downloadedAt.localeCompare(b.downloadedAt))
+  if (files.length === 0) return { ok: false, error: 'No vehicle-unit files assigned to this vehicle yet.' }
+
+  let merged: VuAnalysis | null = null
+  const days = new Map<string, VuDay>()
+  const events = new Map<string, VuEvent>()
+  for (const f of files) {
+    try {
+      const vu = parseVuFile(fs.readFileSync(f.vaultPath))
+      for (const d of vu.days) days.set(d.date, d)
+      for (const e of vu.events) events.set(`${e.kind}|${e.type}|${e.begin}`, e)
+      merged = vu
+    } catch (err) {
+      return { ok: false, error: `Failed to parse ${f.originalName}: ${err instanceof Error ? err.message : String(err)}` }
+    }
+  }
+  if (!merged) return { ok: false, error: 'No parsable vehicle-unit data.' }
+  merged.days = [...days.values()].sort((a, b) => b.date.localeCompare(a.date))
+  merged.events = [...events.values()].sort((a, b) => (b.begin ?? '').localeCompare(a.begin ?? ''))
+
+  const drivers = knownDrivers()
+  const cardGaps: VehicleAnalysis['cardGaps'] = []
+  const unknownCards = new Map<string, { holder: string; cardNumber: string; days: number }>()
+  for (const d of merged.days) {
+    if (d.drivingMin === 0) continue
+    for (const ins of d.insertions) {
+      if (ins.slot !== 'driver' || !ins.cardNumber) continue
+      const known = drivers.find((k) => k.cardNumber === ins.cardNumber)
+      if (!known) {
+        const u = unknownCards.get(ins.cardNumber) ?? { holder: ins.holder, cardNumber: ins.cardNumber, days: 0 }
+        u.days++
+        unknownCards.set(ins.cardNumber, u)
+      } else if (!known.dates.has(d.date)) {
+        cardGaps.push({ date: d.date, driver: known.label, drivingMin: d.drivingMin })
+      }
+    }
+  }
+  const noCardDays = merged.days.filter((d) => d.noCardDrivingMin > 0).map((d) => ({ date: d.date, minutes: d.noCardDrivingMin }))
+  const analysis: VehicleAnalysis = {
+    vu: merged,
+    filesUsed: files.length,
+    asOf: files[files.length - 1]?.downloadedAt ?? '',
+    knownDrivers: drivers.map((k) => ({ label: k.label, cardNumber: k.cardNumber })),
+    unknownCards: [...unknownCards.values()],
+    cardGaps,
+    noCardDays
+  }
+  return { ok: true, analysis }
 }

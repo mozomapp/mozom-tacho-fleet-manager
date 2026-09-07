@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ArchivedFile, DriverAnalysis, ImportResult, Subject, SubjectKind } from '../../shared/types'
+import type { ArchivedFile, DriverAnalysis, ImportResult, Subject, SubjectKind, VehicleAnalysis } from '../../shared/types'
 import CardReaderPanel from './components/CardReaderPanel'
 import DuePanel from './components/DuePanel'
 import DriverAnalysisPanel from './components/DriverAnalysisPanel'
+import VehiclePanel from './components/VehiclePanel'
 import FileTable from './components/FileTable'
 import SettingsPanel from './components/SettingsPanel'
 
@@ -12,6 +13,7 @@ export default function App(): React.JSX.Element {
   const [status, setStatus] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [analysis, setAnalysis] = useState<{ subject: Subject; result: DriverAnalysis } | null>(null)
+  const [vehicle, setVehicle] = useState<{ subject: Subject; result: VehicleAnalysis } | null>(null)
 
   const refresh = useCallback(async () => {
     const [f, s] = await Promise.all([window.api.listFiles(), window.api.listSubjects()])
@@ -72,6 +74,17 @@ export default function App(): React.JSX.Element {
   const analyze = async (subject: Subject): Promise<void> => {
     setBusy(true)
     try {
+      if (subject.kind === 'vehicle') {
+        const v = await window.api.analyzeVehicle(subject.id)
+        if (v.ok) {
+          setVehicle({ subject, result: v.analysis })
+          setStatus('')
+        } else {
+          setVehicle(null)
+          setStatus(v.error)
+        }
+        return
+      }
       const res = await window.api.analyzeDriver(subject.id)
       if (res.ok) {
         setAnalysis({ subject, result: res.analysis })
@@ -132,6 +145,9 @@ export default function App(): React.JSX.Element {
         onCreate={(k, l) => void createSubject(k, l)}
         onAnalyze={(s) => void analyze(s)}
       />
+      {vehicle && (
+        <VehiclePanel analysis={vehicle.result} label={vehicle.subject.label} onClose={() => setVehicle(null)} />
+      )}
       {analysis && (
         <DriverAnalysisPanel
           analysis={analysis.result}

@@ -50,7 +50,7 @@ export default function DuePanel({ subjects, onCreate, onAnalyze }: Props): Reac
               <p className="mt-1 text-xs text-slate-400">
                 Last: {fmtDate(s.lastDownloadAt)} · Due: {fmtDate(s.dueAt)}
               </p>
-              {s.kind === 'driver' && (
+              {(s.kind === 'driver' || s.kind === 'vehicle') && (
                 <button
                   onClick={() => onAnalyze(s)}
                   className="mt-2 rounded-md border border-cyan-800 px-2 py-1 text-xs text-cyan-400 hover:bg-cyan-950"

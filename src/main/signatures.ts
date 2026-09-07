@@ -16,6 +16,7 @@ import { ecdsa, weierstrass } from '@noble/curves/abstract/weierstrass.js'
 import { p256, p384, p521 } from '@noble/curves/nist.js'
 import { sha256, sha384, sha512 } from '@noble/hashes/sha2.js'
 import type { SignatureStatus } from '../shared/types'
+import { RT, readTreps } from './vuParser'
 
 // ─── Root keys (SHA-1 EC_PK.bin 7aa6118b…, root cert 27be282a…) ─────────────
 
@@ -317,6 +318,68 @@ function verifyGen2(blocks: Block[], checks: CheckLine[]): void {
   } catch (err) {
     checks.push({ item: 'Gen2 certificate chain', ok: false, note: err instanceof Error ? err.message : String(err) })
   }
+}
+
+// ─── Vehicle unit (Gen2 record-array TREPs) ─────────────────────────────────
+
+/**
+ * Each TREP carries a Signature record array computed by the VU_Sign key over
+ * every record array in that TREP except the certificate arrays (overview TREP)
+ * and the signature array itself. Chain: ERCA(G2) → MSCA (overview record 4) → VU cert (15).
+ */
+export function verifyVuFile(bytes: Buffer): SignatureReport {
+  const checks: CheckLine[] = []
+  let treps
+  try {
+    treps = readTreps(bytes)
+  } catch (err) {
+    return { status: 'unverified', summary: err instanceof Error ? err.message : String(err), checks }
+  }
+  const overview = treps.find((t) => (t.id & 0x0f) === 1)
+  const mscaRaw = overview?.arrays.find((a) => a.type === RT.MemberStateCertificate)?.records[0]
+  const vuRaw = overview?.arrays.find((a) => a.type === RT.VuCertificate)?.records[0]
+  if (!overview || !mscaRaw || !vuRaw) return { status: 'unverified', summary: 'Overview TREP with certificates not found', checks }
+  let vuKey: EccKey
+  try {
+    const root = parseCvc(ERCA_GEN2_ROOT_CERT)
+    const msca = parseCvc(mscaRaw)
+    const mscaOk = msca.car === root.chr && eccVerify(root.key, msca.body, msca.sig)
+    checks.push({ item: 'VU MSCA certificate', ok: mscaOk, note: `${msca.chr} issued by ${msca.car}${mscaOk ? ' — chain to ERCA(G2) verified' : ''}` })
+    const vu = parseCvc(vuRaw)
+    const vuOk = mscaOk && vu.car === msca.chr && eccVerify(msca.key, vu.body, vu.sig)
+    checks.push({ item: 'VU certificate', ok: vuOk, note: `${vu.chr} (${CURVES[vu.key.oid]?.name ?? vu.key.oid}) issued by ${vu.car}` })
+    if (!vuOk) throw new Error('VU certificate chain invalid')
+    vuKey = vu.key
+  } catch (err) {
+    checks.push({ item: 'VU certificate chain', ok: false, note: err instanceof Error ? err.message : String(err) })
+    return { status: 'invalid', summary: `VU certificate chain failed: ${checks.at(-1)?.note ?? ''}`, checks }
+  }
+  const perTrep = new Map<string, { ok: number; fail: number }>()
+  for (const t of treps) {
+    const sigArr = t.arrays.find((a) => a.type === RT.Signature)
+    const firstData = t.arrays.find((a) => a.type !== RT.MemberStateCertificate && a.type !== RT.VuCertificate)
+    const key = `TREP 0x${t.id.toString(16)}`
+    const tally = perTrep.get(key) ?? { ok: 0, fail: 0 }
+    perTrep.set(key, tally)
+    if (!sigArr || !firstData || !sigArr.records[0]) {
+      tally.fail++
+      continue
+    }
+    let ok = false
+    try {
+      ok = eccVerify(vuKey, bytes.subarray(firstData.start, sigArr.start), sigArr.records[0])
+    } catch {
+      ok = false
+    }
+    if (ok) tally.ok++
+    else tally.fail++
+  }
+  for (const [k, v] of perTrep) checks.push({ item: `VU ${k} data signatures`, ok: v.fail === 0, note: `${v.ok} verified${v.fail ? `, ${v.fail} FAILED` : ''}` })
+  const failed = checks.filter((c) => !c.ok)
+  const total = [...perTrep.values()].reduce((n, v) => n + v.ok, 0)
+  return failed.length === 0
+    ? { status: 'valid', summary: `VU certificate chain and all ${total} block signatures verified against the ERCA(G2) root`, checks }
+    : { status: 'invalid', summary: `${failed.length} check(s) failed: ${failed.map((f) => f.item).join(', ')}`, checks }
 }
 
 // ─── Entry point ────────────────────────────────────────────────────────────

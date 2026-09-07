@@ -11,7 +11,8 @@ import type {
   ScanResult,
   Settings,
   Subject,
-  SubjectKind
+  SubjectKind,
+  VehicleAnalyzeResult
 } from '../shared/types'
 
 export interface Api {
@@ -30,6 +31,7 @@ export interface Api {
   pickAndImportFolder(): Promise<ImportResult>
   revealInVault(filePath: string): Promise<void>
   analyzeDriver(subjectId: number): Promise<AnalyzeResult>
+  analyzeVehicle(subjectId: number): Promise<VehicleAnalyzeResult>
   getReaderStatus(): Promise<ReaderStatus>
   /** Subscribe to reader/card changes; returns an unsubscribe function. */
   onReaderStatus(cb: (s: ReaderStatus) => void): () => void
@@ -53,6 +55,7 @@ const api: Api = {
   pickAndImportFolder: () => ipcRenderer.invoke('import:pickFolder'),
   revealInVault: (filePath) => ipcRenderer.invoke('vault:reveal', filePath),
   analyzeDriver: (subjectId) => ipcRenderer.invoke('analyze:driver', subjectId),
+  analyzeVehicle: (subjectId) => ipcRenderer.invoke('analyze:vehicle', subjectId),
   getReaderStatus: () => ipcRenderer.invoke('card:status'),
   onReaderStatus: (cb) => {
     const listener = (_e: Electron.IpcRendererEvent, s: ReaderStatus): void => cb(s)

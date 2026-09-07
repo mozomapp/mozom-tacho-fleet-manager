@@ -169,3 +169,78 @@ export interface MirrorSyncResult {
   present: number
   errors: string[]
 }
+
+// ─── Vehicle unit (VU) download analysis ────────────────────────────────────
+
+export interface VuIwRecord {
+  holder: string
+  cardNumber: string
+  cardNation: string
+  slot: 'driver' | 'co_driver'
+  insertedAt: string | null
+  withdrawnAt: string | null
+  odometerInKm: number
+  odometerOutKm: number
+  manualEntries: boolean
+}
+export interface VuPlace {
+  cardNumber: string
+  at: string | null
+  type: 'begin' | 'end'
+  country: string
+  odometerKm: number
+}
+export interface VuDay {
+  date: string
+  odometerMidnightKm: number | null
+  distanceKm: number | null
+  /** Driver-slot driving minutes recorded by the VU. */
+  drivingMin: number
+  /** Driving minutes with no card in the driver slot. */
+  noCardDrivingMin: number
+  /** Driving minutes flagged as crew (double-manned). */
+  crewMin: number
+  insertions: VuIwRecord[]
+  places: VuPlace[]
+  gnssFixes: number
+}
+export interface VuEvent {
+  kind: 'event' | 'fault' | 'overspeed'
+  type: number
+  name: string
+  begin: string | null
+  end: string | null
+  driverCard: string | null
+  similar: number
+}
+export interface VuAnalysis {
+  generation: '2' | '2v2'
+  vin: string
+  registration: string
+  registrationNation: string
+  vuClockAtDownload: string | null
+  downloadablePeriod: { from: string | null; to: string | null } | null
+  previousDownload: { at: string | null; cardNumber: string | null; company: string } | null
+  companyLocks: { lockedIn: string | null; lockedOut: string | null; company: string; cardNumber: string | null }[]
+  controls: { type: number; at: string | null; cardNumber: string | null }[]
+  vu: { manufacturer: string; partNumber: string; serial: string; softwareVersion: string; approvalNumber: string; generation: number } | null
+  calibrations: { purpose: number; workshop: string; at: string | null; nextDue: string | null; vin: string }[]
+  /** Most recent first. */
+  days: VuDay[]
+  /** Most recent first. */
+  events: VuEvent[]
+  trepCounts: Record<string, number>
+}
+
+export interface VehicleAnalysis {
+  vu: VuAnalysis
+  filesUsed: number
+  asOf: string
+  knownDrivers: { label: string; cardNumber: string }[]
+  /** Driver cards seen in the VU with no matching driver in this archive. */
+  unknownCards: { holder: string; cardNumber: string; days: number }[]
+  /** Days the VU recorded driving for a known driver whose card files have no record that day. */
+  cardGaps: { date: string; driver: string; drivingMin: number }[]
+  noCardDays: { date: string; minutes: number }[]
+}
+export type VehicleAnalyzeResult = { ok: true; analysis: VehicleAnalysis } | { ok: false; error: string }
