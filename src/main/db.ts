@@ -41,6 +41,10 @@ function migrate(d: Database.Database): void {
       value TEXT
     );
   `)
+  const cols = d.prepare('PRAGMA table_info(files)').all() as { name: string }[]
+  if (!cols.some((c) => c.name === 'signature_report')) {
+    d.exec('ALTER TABLE files ADD COLUMN signature_report TEXT')
+  }
 }
 
 interface FileRow {
@@ -54,6 +58,7 @@ interface FileRow {
   size_bytes: number
   vault_path: string
   signature_status: ArchivedFile['signatureStatus']
+  signature_report: string | null
 }
 
 function toArchivedFile(r: FileRow): ArchivedFile {
@@ -67,7 +72,8 @@ function toArchivedFile(r: FileRow): ArchivedFile {
     importedAt: r.imported_at,
     sizeBytes: r.size_bytes,
     vaultPath: r.vault_path,
-    signatureStatus: r.signature_status
+    signatureStatus: r.signature_status,
+    signatureReport: r.signature_report
   }
 }
 
@@ -89,12 +95,16 @@ export function insertFile(f: Omit<ArchivedFile, 'id'>): ArchivedFile {
   const res = getDb()
     .prepare(
       `INSERT INTO files (sha256, original_name, kind, subject_id, downloaded_at,
-         imported_at, size_bytes, vault_path, signature_status)
+         imported_at, size_bytes, vault_path, signature_status, signature_report)
        VALUES (@sha256, @originalName, @kind, @subjectId, @downloadedAt,
-         @importedAt, @sizeBytes, @vaultPath, @signatureStatus)`
+         @importedAt, @sizeBytes, @vaultPath, @signatureStatus, @signatureReport)`
     )
     .run(f as unknown as Record<string, unknown>)
   return { ...f, id: Number(res.lastInsertRowid) }
+}
+
+export function updateSignature(fileId: number, status: ArchivedFile['signatureStatus'], report: string): void {
+  getDb().prepare('UPDATE files SET signature_status = ?, signature_report = ? WHERE id = ?').run(status, report, fileId)
 }
 
 export function assignFileSubject(fileId: number, subjectId: number | null): void {

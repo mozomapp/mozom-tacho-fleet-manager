@@ -34,6 +34,8 @@ export interface ArchivedFile {
   sizeBytes: number
   vaultPath: string
   signatureStatus: SignatureStatus
+  /** JSON SignatureReport (see main/signatures.ts) or a plain note. */
+  signatureReport: string | null
 }
 
 export interface Subject {
@@ -49,6 +51,8 @@ export interface ImportResult {
   imported: number
   duplicates: number
   errors: string[]
+  /** Files moved into the Downloadkey's `downloaded/` folder after archiving (key scans only). */
+  moved?: number
 }
 
 export interface Settings {
@@ -156,3 +160,12 @@ export type CardDownloadResult =
       warnings: string[]
     }
   | { ok: false; error: string; warnings: string[] }
+
+// ─── Mirror (backup copy) ───────────────────────────────────────────────────
+
+export interface MirrorSyncResult {
+  mirrorPath: string | null
+  copied: number
+  present: number
+  errors: string[]
+}

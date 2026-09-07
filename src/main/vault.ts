@@ -3,6 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import type { ArchivedFile, FileKind, ImportResult } from '../shared/types'
 import { getFileBySha256, getSettings, insertFile } from './db'
+import { verifyCardFile } from './signatures'
 
 /**
  * Detect what a tachograph download file contains.
@@ -63,19 +64,34 @@ export function archiveBuffer(
     }
   }
 
+  const kind = detectKind(buf, name)
+  const sig = signatureOf(buf, kind)
   const record: Omit<ArchivedFile, 'id'> = {
     sha256: hash,
     originalName: name,
-    kind: detectKind(buf, name),
+    kind,
     subjectId: null,
     downloadedAt,
     importedAt: new Date().toISOString(),
     sizeBytes: buf.length,
     vaultPath: destPath,
-    // TODO(phase 1b): verify Gen1 RSA / Gen2 ECC signatures against ERCA public keys.
-    signatureStatus: 'unverified'
+    signatureStatus: sig.status,
+    signatureReport: sig.report
   }
   return { outcome: 'imported', file: insertFile(record) }
+}
+
+/** Verify what we can: driver-card files fully; VU files await the VU parser. */
+export function signatureOf(buf: Buffer, kind: FileKind): { status: ArchivedFile['signatureStatus']; report: string } {
+  if (kind !== 'driver_card') {
+    return { status: 'unverified', report: 'Vehicle-unit signature verification not implemented yet' }
+  }
+  try {
+    const r = verifyCardFile(buf)
+    return { status: r.status, report: JSON.stringify(r) }
+  } catch (err) {
+    return { status: 'unverified', report: `Verification error: ${err instanceof Error ? err.message : String(err)}` }
+  }
 }
 
 /** Copy one file from disk into the vault. */
@@ -84,6 +100,15 @@ function archiveOne(srcPath: string): 'imported' | 'duplicate' {
   const stat = fs.statSync(srcPath)
   const name = path.basename(srcPath)
   return archiveBuffer(buf, name, inferDownloadDate(name, stat.mtime)).outcome
+}
+
+/** True when the file's bytes are already archived (by hash). */
+export function isArchived(srcPath: string): boolean {
+  try {
+    return getFileBySha256(sha256Of(fs.readFileSync(srcPath))) !== null
+  } catch {
+    return false
+  }
 }
 
 export function importFiles(paths: string[]): ImportResult {

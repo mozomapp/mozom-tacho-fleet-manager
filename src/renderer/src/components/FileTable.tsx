@@ -1,3 +1,14 @@
+function signatureSummary(report: string | null): string {
+  if (!report) return ''
+  try {
+    const r = JSON.parse(report) as { summary?: string; checks?: { item: string; ok: boolean; note?: string }[] }
+    const failed = (r.checks ?? []).filter((c) => !c.ok).map((c) => `${c.item}${c.note ? `: ${c.note}` : ''}`)
+    return [r.summary, ...failed].filter(Boolean).join('\n')
+  } catch {
+    return report
+  }
+}
+
 import type { ArchivedFile, Subject } from '../../../shared/types'
 
 const KIND_LABELS: Record<ArchivedFile['kind'], string> = {
@@ -55,7 +66,7 @@ export default function FileTable({ files, subjects, onAssign, onReveal }: Props
                           : 'text-slate-500'
                     }
                   >
-                    {f.signatureStatus}
+                    <span title={signatureSummary(f.signatureReport)}>{f.signatureStatus}</span>
                   </span>
                 </td>
                 <td className="py-2 pr-3">

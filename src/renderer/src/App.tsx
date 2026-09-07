@@ -4,6 +4,7 @@ import CardReaderPanel from './components/CardReaderPanel'
 import DuePanel from './components/DuePanel'
 import DriverAnalysisPanel from './components/DriverAnalysisPanel'
 import FileTable from './components/FileTable'
+import SettingsPanel from './components/SettingsPanel'
 
 export default function App(): React.JSX.Element {
   const [files, setFiles] = useState<ArchivedFile[]>([])
@@ -24,6 +25,7 @@ export default function App(): React.JSX.Element {
 
   const reportImport = (r: ImportResult): void => {
     const parts = [`${r.imported} imported`, `${r.duplicates} duplicates`]
+    if (r.moved) parts.push(`${r.moved} moved to downloaded/ on the key`)
     if (r.errors.length) parts.push(`${r.errors.length} errors: ${r.errors.join('; ')}`)
     setStatus(parts.join(' · '))
   }
@@ -41,7 +43,7 @@ export default function App(): React.JSX.Element {
   const scanKey = async (): Promise<void> => {
     setBusy(true)
     try {
-      const scan = await window.api.scanKey()
+      const { scan, result } = await window.api.importFromKey()
       if (scan.candidateFiles.length === 0) {
         setStatus(
           scan.volumes.length === 0
@@ -50,7 +52,7 @@ export default function App(): React.JSX.Element {
         )
         return
       }
-      reportImport(await window.api.importFiles(scan.candidateFiles))
+      reportImport(result)
       await refresh()
     } finally {
       setBusy(false)
@@ -143,6 +145,7 @@ export default function App(): React.JSX.Element {
         onAssign={(f, s) => void assign(f, s)}
         onReveal={(p) => void window.api.revealInVault(p)}
       />
+      <SettingsPanel fileCount={files.length} />
     </div>
   )
 }

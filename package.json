@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@mozomdev/tacho": "file:../tacho/mozomdev-tacho-0.7.1.tgz",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
     "@pokusew/pcsclite": "^0.6.0",
     "better-sqlite3": "^12.2.0"
   },

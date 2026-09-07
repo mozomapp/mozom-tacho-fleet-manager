@@ -60,3 +60,29 @@ export function scanForDownloadkey(): ScanResult {
   const candidateFiles = volumes.flatMap((v) => findTachoFiles(v))
   return { volumes, candidateFiles }
 }
+
+/**
+ * After archiving, move files sitting at a Downloadkey volume root into its
+ * `downloaded/` folder — GloboFleet's convention, which the key expects: it keeps
+ * root files as "not yet uploaded". Only files whose bytes are already in the
+ * vault are moved; nothing is ever deleted or overwritten.
+ */
+export function tidyDownloadkey(volumes: string[], files: string[], isArchived: (p: string) => boolean): number {
+  let moved = 0
+  for (const root of volumes) {
+    const dest = path.join(root, 'downloaded')
+    for (const f of files) {
+      if (path.dirname(f) !== root || !isArchived(f)) continue
+      try {
+        fs.mkdirSync(dest, { recursive: true })
+        const target = path.join(dest, path.basename(f))
+        if (fs.existsSync(target)) continue
+        fs.renameSync(f, target)
+        moved++
+      } catch {
+        // Leave the file where it is; the archive already holds it.
+      }
+    }
+  }
+  return moved
+}

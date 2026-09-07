@@ -7,6 +7,7 @@ import type {
   CardDownloadResult,
   ReaderStatus,
   ImportResult,
+  MirrorSyncResult,
   ScanResult,
   Settings,
   Subject,
@@ -21,6 +22,9 @@ export interface Api {
   getSettings(): Promise<Settings>
   setSetting(key: 'vault_path' | 'mirror_path', value: string | null): Promise<void>
   scanKey(): Promise<ScanResult>
+  importFromKey(): Promise<{ scan: ScanResult; result: ImportResult }>
+  pickDir(): Promise<string | null>
+  syncMirror(): Promise<MirrorSyncResult>
   importFiles(paths: string[]): Promise<ImportResult>
   pickAndImportFiles(): Promise<ImportResult>
   pickAndImportFolder(): Promise<ImportResult>
@@ -41,6 +45,9 @@ const api: Api = {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
   scanKey: () => ipcRenderer.invoke('import:scanKey'),
+  importFromKey: () => ipcRenderer.invoke('import:fromKey'),
+  pickDir: () => ipcRenderer.invoke('settings:pickDir'),
+  syncMirror: () => ipcRenderer.invoke('mirror:sync'),
   importFiles: (paths) => ipcRenderer.invoke('import:files', paths),
   pickAndImportFiles: () => ipcRenderer.invoke('import:pickFiles'),
   pickAndImportFolder: () => ipcRenderer.invoke('import:pickFolder'),

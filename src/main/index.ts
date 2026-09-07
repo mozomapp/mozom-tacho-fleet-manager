@@ -1,14 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import fs from 'node:fs'
 import path from 'node:path'
 import {
   assignFileSubject,
   createSubject,
   getSettings,
   listFiles,
-  setSetting
+  setSetting,
+  updateSignature
 } from './db'
-import { importFiles } from './vault'
-import { findTachoFiles, scanForDownloadkey } from './importer'
+import { detectKind, importFiles, isArchived, signatureOf } from './vault'
+import { findTachoFiles, scanForDownloadkey, tidyDownloadkey } from './importer'
+import { syncMirror } from './mirror'
 import { listSubjects } from './schedule'
 import { analyzeDriver } from './analysis'
 import { readerMonitor, waitForCard } from './pcsc'
@@ -51,6 +54,18 @@ function registerIpc(): void {
     setSetting(key, value)
   )
   ipcMain.handle('import:scanKey', () => scanForDownloadkey())
+  ipcMain.handle('import:fromKey', () => {
+    const scan = scanForDownloadkey()
+    const result = importFiles(scan.candidateFiles)
+    result.moved = tidyDownloadkey(scan.volumes, scan.candidateFiles, isArchived)
+    syncMirror()
+    return { scan, result }
+  })
+  ipcMain.handle('settings:pickDir', async () => {
+    const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+    return res.canceled ? null : (res.filePaths[0] ?? null)
+  })
+  ipcMain.handle('mirror:sync', () => syncMirror())
   ipcMain.handle('import:files', (_e, paths: string[]) => importFiles(paths))
   ipcMain.handle('import:pickFiles', async () => {
     const res = await dialog.showOpenDialog({
@@ -111,10 +126,51 @@ function runCliImport(paths: string[]): void {
   app.exit(result.errors.length > 0 ? 1 : 0)
 }
 
+// Headless modes must never hang on a crash: report and exit non-zero.
+process.on('uncaughtException', (err) => {
+  process.stderr.write(`fatal: ${err.stack ?? err.message}\n`)
+  app.exit(2)
+})
+process.on('unhandledRejection', (err) => {
+  process.stderr.write(`fatal: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`)
+  app.exit(2)
+})
+
 app.whenReady().then(() => {
   const importIdx = process.argv.indexOf('--import')
   if (importIdx !== -1) {
     runCliImport(process.argv.slice(importIdx + 1))
+    return
+  }
+  if (process.argv.includes('--import-key')) {
+    const scan = scanForDownloadkey()
+    const result = importFiles(scan.candidateFiles)
+    result.moved = tidyDownloadkey(scan.volumes, scan.candidateFiles, isArchived)
+    process.stdout.write(`${JSON.stringify({ scan, result, mirror: syncMirror() })}\n`)
+    app.exit(0)
+    return
+  }
+  if (process.argv.includes('--verify-all')) {
+    const out = listFiles().map((f) => {
+      const r = signatureOf(fs.readFileSync(f.vaultPath), f.kind)
+      updateSignature(f.id, r.status, r.report)
+      return { id: f.id, name: f.originalName, status: r.status, report: r.report }
+    })
+    process.stdout.write(`${JSON.stringify(out)}\n`)
+    app.exit(0)
+    return
+  }
+  const verifyIdx = process.argv.indexOf('--verify-file')
+  if (verifyIdx !== -1) {
+    const file = process.argv[verifyIdx + 1] as string
+    const buf = fs.readFileSync(file)
+    process.stdout.write(`${JSON.stringify(signatureOf(buf, detectKind(buf, file)))}\n`)
+    app.exit(0)
+    return
+  }
+  if (process.argv.includes('--sync-mirror')) {
+    process.stdout.write(`${JSON.stringify(syncMirror())}\n`)
+    app.exit(0)
     return
   }
   if (process.argv.includes('--card-download')) {
@@ -130,6 +186,11 @@ app.whenReady().then(() => {
   }
   registerIpc()
   createWindow()
+  try {
+    syncMirror()
+  } catch {
+    // Mirror unavailable (disk unplugged): the vault is still authoritative.
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
