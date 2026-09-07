@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import type { ArchivedFile, FileKind, ImportResult } from '../shared/types'
-import { fileExists, getSettings, insertFile } from './db'
+import { getFileBySha256, getSettings, insertFile } from './db'
 
 /**
  * Detect what a tachograph download file contains.
@@ -33,18 +33,19 @@ function sha256Of(buf: Buffer): string {
 }
 
 /**
- * Copy one file into the vault (and mirror, if configured), read-only, dedup by hash.
- * Originals are never modified or deleted — the archive is append-only.
+ * Archive raw bytes into the vault (and mirror, if configured), read-only,
+ * dedup by hash. Originals are never modified or deleted — append-only.
  */
-function archiveOne(srcPath: string): 'imported' | 'duplicate' {
-  const buf = fs.readFileSync(srcPath)
+export function archiveBuffer(
+  buf: Buffer,
+  name: string,
+  downloadedAt: string
+): { outcome: 'imported' | 'duplicate'; file: ArchivedFile } {
   const hash = sha256Of(buf)
-  if (fileExists(hash)) return 'duplicate'
+  const existing = getFileBySha256(hash)
+  if (existing) return { outcome: 'duplicate', file: existing }
 
   const { vaultPath, mirrorPath } = getSettings()
-  const stat = fs.statSync(srcPath)
-  const name = path.basename(srcPath)
-  const downloadedAt = inferDownloadDate(name, stat.mtime)
   const year = downloadedAt.slice(0, 4)
   const destDir = path.join(vaultPath, 'originals', year)
   fs.mkdirSync(destDir, { recursive: true })
@@ -69,13 +70,20 @@ function archiveOne(srcPath: string): 'imported' | 'duplicate' {
     subjectId: null,
     downloadedAt,
     importedAt: new Date().toISOString(),
-    sizeBytes: stat.size,
+    sizeBytes: buf.length,
     vaultPath: destPath,
     // TODO(phase 1b): verify Gen1 RSA / Gen2 ECC signatures against ERCA public keys.
     signatureStatus: 'unverified'
   }
-  insertFile(record)
-  return 'imported'
+  return { outcome: 'imported', file: insertFile(record) }
+}
+
+/** Copy one file from disk into the vault. */
+function archiveOne(srcPath: string): 'imported' | 'duplicate' {
+  const buf = fs.readFileSync(srcPath)
+  const stat = fs.statSync(srcPath)
+  const name = path.basename(srcPath)
+  return archiveBuffer(buf, name, inferDownloadDate(name, stat.mtime)).outcome
 }
 
 export function importFiles(paths: string[]): ImportResult {

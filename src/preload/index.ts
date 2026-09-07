@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AnalyzeResult,
   ArchivedFile,
+  CardDownloadOptions,
+  CardDownloadProgress,
+  CardDownloadResult,
+  ReaderStatus,
   ImportResult,
   ScanResult,
   Settings,
@@ -22,6 +26,11 @@ export interface Api {
   pickAndImportFolder(): Promise<ImportResult>
   revealInVault(filePath: string): Promise<void>
   analyzeDriver(subjectId: number): Promise<AnalyzeResult>
+  getReaderStatus(): Promise<ReaderStatus>
+  /** Subscribe to reader/card changes; returns an unsubscribe function. */
+  onReaderStatus(cb: (s: ReaderStatus) => void): () => void
+  downloadCard(opts: CardDownloadOptions): Promise<CardDownloadResult>
+  onCardProgress(cb: (p: CardDownloadProgress) => void): () => void
 }
 
 const api: Api = {
@@ -36,7 +45,19 @@ const api: Api = {
   pickAndImportFiles: () => ipcRenderer.invoke('import:pickFiles'),
   pickAndImportFolder: () => ipcRenderer.invoke('import:pickFolder'),
   revealInVault: (filePath) => ipcRenderer.invoke('vault:reveal', filePath),
-  analyzeDriver: (subjectId) => ipcRenderer.invoke('analyze:driver', subjectId)
+  analyzeDriver: (subjectId) => ipcRenderer.invoke('analyze:driver', subjectId),
+  getReaderStatus: () => ipcRenderer.invoke('card:status'),
+  onReaderStatus: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, s: ReaderStatus): void => cb(s)
+    ipcRenderer.on('card:readers', listener)
+    return () => ipcRenderer.off('card:readers', listener)
+  },
+  downloadCard: (opts) => ipcRenderer.invoke('card:download', opts),
+  onCardProgress: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: CardDownloadProgress): void => cb(p)
+    ipcRenderer.on('card:progress', listener)
+    return () => ipcRenderer.off('card:progress', listener)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

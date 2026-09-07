@@ -78,8 +78,11 @@ export function listFiles(): ArchivedFile[] {
   return rows.map(toArchivedFile)
 }
 
-export function fileExists(sha256: string): boolean {
-  return !!getDb().prepare('SELECT 1 FROM files WHERE sha256 = ?').get(sha256)
+export function getFileBySha256(sha256: string): ArchivedFile | null {
+  const row = getDb().prepare('SELECT * FROM files WHERE sha256 = ?').get(sha256) as
+    | FileRow
+    | undefined
+  return row ? toArchivedFile(row) : null
 }
 
 export function insertFile(f: Omit<ArchivedFile, 'id'>): ArchivedFile {
@@ -104,6 +107,13 @@ export function listSubjectRows(): { id: number; kind: SubjectKind; label: strin
     kind: SubjectKind
     label: string
   }[]
+}
+
+export function findSubjectByLabel(kind: SubjectKind, label: string): number | null {
+  const row = getDb()
+    .prepare('SELECT id FROM subjects WHERE kind = ? AND lower(label) = lower(?)')
+    .get(kind, label.trim()) as { id: number } | undefined
+  return row?.id ?? null
 }
 
 export function createSubject(kind: SubjectKind, label: string): number {

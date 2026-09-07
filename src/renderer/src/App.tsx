@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ArchivedFile, DriverAnalysis, ImportResult, Subject, SubjectKind } from '../../shared/types'
+import CardReaderPanel from './components/CardReaderPanel'
 import DuePanel from './components/DuePanel'
 import DriverAnalysisPanel from './components/DriverAnalysisPanel'
 import FileTable from './components/FileTable'
@@ -121,6 +122,8 @@ export default function App(): React.JSX.Element {
           {status}
         </p>
       )}
+
+      <CardReaderPanel onDownloaded={() => void refresh()} />
 
       <DuePanel
         subjects={subjects}

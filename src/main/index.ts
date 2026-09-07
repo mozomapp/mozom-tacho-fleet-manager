@@ -11,6 +11,9 @@ import { importFiles } from './vault'
 import { findTachoFiles, scanForDownloadkey } from './importer'
 import { listSubjects } from './schedule'
 import { analyzeDriver } from './analysis'
+import { readerMonitor, waitForCard } from './pcsc'
+import { downloadCardToVault } from './cardDownload'
+import type { CardDownloadOptions } from '../shared/types'
 import type { SubjectKind } from '../shared/types'
 
 function createWindow(): void {
@@ -64,6 +67,41 @@ function registerIpc(): void {
   })
   ipcMain.handle('vault:reveal', (_e, filePath: string) => shell.showItemInFolder(filePath))
   ipcMain.handle('analyze:driver', (_e, subjectId: number) => analyzeDriver(subjectId))
+
+  // Office card reader: live reader/card status pushed to every window.
+  readerMonitor.start()
+  readerMonitor.on('change', () => {
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send('card:readers', readerMonitor.status())
+  })
+  ipcMain.handle('card:status', () => readerMonitor.status())
+  ipcMain.handle('card:download', (e, opts: CardDownloadOptions) =>
+    downloadCardToVault({
+      ...opts,
+      onProgress: (p) => e.sender.send('card:progress', { message: p.message, bytesSoFar: p.bytesSoFar })
+    })
+  )
+}
+
+/**
+ * Headless mode: `electron . --card-download [--reader <name>] [--update-card] [--out <dir>]`
+ * downloads the inserted driver card into the vault and exits (JSON on stdout, progress on stderr).
+ */
+async function runCliCardDownload(argv: string[]): Promise<void> {
+  const flag = (name: string): string | undefined => {
+    const i = argv.indexOf(name)
+    return i === -1 ? undefined : argv[i + 1]
+  }
+  await waitForCard(10000)
+  process.stderr.write(`readers: ${JSON.stringify(readerMonitor.status())}\n`)
+  const result = await downloadCardToVault({
+    readerName: flag('--reader'),
+    updateCardDownloadDate: argv.includes('--update-card'),
+    outDir: flag('--out'),
+    onProgress: (p) => process.stderr.write(`${p.message}\n`)
+  })
+  process.stdout.write(`${JSON.stringify(result)}\n`)
+  readerMonitor.stop()
+  app.exit(result.ok ? 0 : 1)
 }
 
 /** Headless mode: `electron . --import <file...>` archives files and exits (for tests/automation). */
@@ -77,6 +115,10 @@ app.whenReady().then(() => {
   const importIdx = process.argv.indexOf('--import')
   if (importIdx !== -1) {
     runCliImport(process.argv.slice(importIdx + 1))
+    return
+  }
+  if (process.argv.includes('--card-download')) {
+    void runCliCardDownload(process.argv)
     return
   }
   const analyzeIdx = process.argv.indexOf('--analyze')

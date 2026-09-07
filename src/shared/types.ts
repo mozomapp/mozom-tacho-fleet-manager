@@ -108,3 +108,49 @@ export interface DriverAnalysis {
 }
 
 export type AnalyzeResult = { ok: true; analysis: DriverAnalysis } | { ok: false; error: string }
+
+// ─── Office card reader (PC/SC) ─────────────────────────────────────────────
+
+export interface ReaderState {
+  name: string
+  cardPresent: boolean
+}
+
+export interface ReaderStatus {
+  /** false when the PC/SC service itself is unavailable. */
+  available: boolean
+  error: string | null
+  readers: ReaderState[]
+}
+
+export interface CardDownloadProgress {
+  message: string
+  bytesSoFar: number
+}
+
+export interface CardDownloadOptions {
+  readerName?: string
+  /** Write this download's timestamp to EF_Card_Download (what GloboFleet does). */
+  updateCardDownloadDate: boolean
+}
+
+export interface CardHolderSummary {
+  cardNumber: string
+  surname: string
+  firstNames: string
+}
+
+export type CardDownloadResult =
+  | {
+      ok: true
+      fileName: string
+      sizeBytes: number
+      generation: 1 | 2
+      holder: CardHolderSummary
+      archive: 'imported' | 'duplicate'
+      vaultPath: string
+      subjectId: number
+      durationMs: number
+      warnings: string[]
+    }
+  | { ok: false; error: string; warnings: string[] }
